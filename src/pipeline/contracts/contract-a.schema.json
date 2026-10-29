@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fluence.mx/schema/contract-a-2.0.0.json",
+  "title": "Contrato A",
+  "description": "Vista LÓGICA de un proceso (sin geometría). Es la entrada del diagramador (JSON → BPMN + autolayout) y la interfaz de lectura/escritura para la IA (BPMN → JSON). La posición/color/paginación viven SOLO en el BPMN, nunca aquí.",
+  "type": "object",
+  "required": ["schemaVersion", "version", "process", "lanes", "nodes", "edges"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "contrato-a" },
+    "version": { "const": "2.0.0" },
+    "process": {
+      "type": "object",
+      "required": ["id", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "description": "Nota del proceso → bpmn:documentation." }
+      }
+    },
+    "lanes": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Carriles (roles). El order es contiguo desde 0, de arriba hacia abajo.",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "order"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "name": { "type": "string", "minLength": 1 },
+          "order": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "dataStores": {
+      "type": "array",
+      "description": "Sistemas / bases de datos (el \"tambor\"): cilindro nativo bpmn:DataStoreReference, compartido. Las actividades se ligan con reads/writes (líneas punteadas).",
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "name": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "name", "lane"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Estable y único. Al editar (agregar/quitar/fusionar) se PRESERVAN los ids existentes; así el merge conserva el layout de lo que no cambió."
+          },
+          "type": {
+            "enum": ["startEvent", "endEvent", "task", "userTask", "serviceTask", "exclusiveGateway", "parallelGateway"],
+            "description": "Vocabulario cerrado. userTask = la hace una persona; serviceTask = la hace un sistema; task = genérica. exclusiveGateway = decisión; parallelGateway = ramas simultáneas."
+          },
+          "name": { "type": "string" },
+          "lane": { "type": "string", "minLength": 1, "description": "id de un lane existente." },
+          "description": { "type": "string", "description": "Nota/contexto → bpmn:documentation (nativo)." },
+          "reads": { "$ref": "#/$defs/dataStoreRefs", "description": "ids de dataStores que la actividad LEE (línea punteada entrante)." },
+          "writes": { "$ref": "#/$defs/dataStoreRefs", "description": "ids de dataStores que la actividad ESCRIBE (línea punteada saliente)." },
+          "risks": { "$ref": "#/$defs/rcoList" },
+          "controls": { "$ref": "#/$defs/rcoList" },
+          "opportunities": { "$ref": "#/$defs/rcoList" }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "description": "Flujos de secuencia (from → to). startEvent no tiene entradas; endEvent no tiene salidas.",
+      "items": {
+        "type": "object",
+        "required": ["id", "from", "to"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "from": { "type": "string", "minLength": 1, "description": "id de nodo origen." },
+          "to": { "type": "string", "minLength": 1, "description": "id de nodo destino." },
+          "label": { "type": "string", "description": "Condición de salida de un gateway (p. ej. \"Sí\" / \"No\")." }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "dataStoreRefs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "rcoList": {
+      "type": "array",
+      "description": "Riesgos / controles / oportunidades de la actividad (capa GRC de Fluence; viaja en flu:extensionElements).",
+      "items": {
+        "type": "object",
+        "required": ["text"],
+        "additionalProperties": false,
+        "properties": {
+          "code": { "type": "string", "description": "Clave corta, p. ej. R1 / C1 / O1." },
+          "text": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

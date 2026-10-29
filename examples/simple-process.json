@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "contrato-a",
+  "version": "2.0.0",
+  "process": { "id": "Process_demo", "name": "Solicitud de compra" },
+  "lanes": [{ "id": "Lane_solicitante", "name": "Solicitante", "order": 0 }],
+  "nodes": [
+    { "id": "Start_1", "type": "startEvent", "name": "Inicio", "lane": "Lane_solicitante" },
+    { "id": "Task_1", "type": "userTask", "name": "Registrar solicitud", "lane": "Lane_solicitante" },
+    { "id": "End_1", "type": "endEvent", "name": "Fin", "lane": "Lane_solicitante" }
+  ],
+  "edges": [
+    { "id": "Flow_1", "from": "Start_1", "to": "Task_1" },
+    { "id": "Flow_2", "from": "Task_1", "to": "End_1" }
+  ]
+}
