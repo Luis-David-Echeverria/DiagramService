@@ -1,0 +1,48 @@
+# Proxy TLS delante de DiagramService. Ver docs/DEPLOY-HETZNER.md.
+# Escrito el 1-nov-2026 sin ejecutar: probar en Hetzner.
+#
+# - Certificado de una CA publica (Let's Encrypt) por TLS-ALPN-01, que va por
+#   el 443: no hace falta abrir el 80. El reto HTTP-01 queda desactivado.
+# - Sin access log a proposito: el de Caddy incluye las cabeceras de la
+#   peticion (X-API-Key). El registro por peticion lo hace el servicio, sin la
+#   clave ni el cuerpo.
+# - Solo las IP de DIAGRAMSERVICE_ALLOWED_IPS llegan al servicio; el resto
+#   recibe 403. El TLS-ALPN-01 se resuelve en el handshake, antes de este filtro.
+{
+	email {$ACME_EMAIL}
+	auto_https disable_redirects
+	admin off
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$DIAGRAMSERVICE_DOMAIN} {
+	tls {
+		protocols tls1.2 tls1.3
+		issuer acme {
+			disable_http_challenge
+		}
+	}
+
+	@denied not remote_ip {$DIAGRAMSERVICE_ALLOWED_IPS}
+	respond @denied 403 {
+		close
+	}
+
+	request_body {
+		max_size 10MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	reverse_proxy diagramservice:8080 {
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 130s
+		}
+	}
+}
