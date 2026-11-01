@@ -1,0 +1,83 @@
+# Proxy TLS delante de DiagramService. Ver docs/DEPLOY-HETZNER.md.
+# Escrito el 1-nov-2026 sin ejecutar: validar en Hetzner (DEPLOY-HETZNER §7).
+#
+# - Certificado de Let's Encrypt por HTTP-01 en el puerto 80. TLS-ALPN-01
+#   desactivado: el 443 esta cerrado en el Cloud Firewall de Hetzner salvo para
+#   la IP de VMBimcon02, asi que la CA no podria validar por ahi.
+# - En el 80 solo vive el reto ACME (Caddy lo atiende antes de las rutas del
+#   sitio); cualquier otra peticion recibe 404. No hay redireccion a https.
+# - En el 443, ademas del firewall, dos filtros en este orden:
+#     1. IP fuera de DIAGRAMSERVICE_ALLOWED_IPS -> 403 {"error":"forbidden"}
+#     2. X-API-Key ausente o distinta de las dos claves -> 401 {"error":"unauthorized"}
+#   El servicio vuelve a comprobar la clave (en tiempo constante) detras.
+# - Las claves salen de variables de entorno, nunca de este fichero. Las dos
+#   son obligatorias (docker-compose.yml las exige con :?): fuera de una
+#   rotacion valen lo mismo. Una vacia dejaria "header X-API-Key" sin valor, que
+#   en Caddy significa "con la cabecera presente, valga lo que valga".
+#   Las claves no pueden llevar espacios ni "*" (el matcher trata un "*" al
+#   principio o al final como comodin): usar las de "openssl rand -hex 32".
+# - Sin access log a proposito (no hay directiva "log"): el de Caddy incluye las
+#   cabeceras de la peticion, y con ellas la clave.
+{
+	email {$ACME_EMAIL}
+	admin off
+	servers {
+		protocols h1 h2
+	}
+}
+
+# Puerto 80: solo el reto HTTP-01 (Caddy lo resuelve antes de llegar aqui).
+http:// {
+	respond 404 {
+		close
+	}
+}
+
+https://{$DIAGRAMSERVICE_DOMAIN} {
+	tls {
+		protocols tls1.2 tls1.3
+		issuer acme {
+			disable_tlsalpn_challenge
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	# 1. Filtro de IP (repite el del firewall: defensa en profundidad).
+	@ip_no_autorizada not remote_ip {$DIAGRAMSERVICE_ALLOWED_IPS}
+	handle @ip_no_autorizada {
+		header Content-Type application/json
+		respond `{"error":"forbidden","message":"IP no autorizada"}` 403 {
+			close
+		}
+	}
+
+	# 2. La clave. Dos lineas del mismo matcher "header" = una u otra.
+	@sin_clave {
+		not {
+			header X-API-Key {$DIAGRAMSERVICE_API_KEY}
+			header X-API-Key {$DIAGRAMSERVICE_API_KEY_PREVIOUS}
+		}
+	}
+	handle @sin_clave {
+		header Content-Type application/json
+		header WWW-Authenticate `ApiKey header="X-API-Key"`
+		respond `{"error":"unauthorized","message":"X-API-Key ausente o no valida"}` 401
+	}
+
+	# 3. Lo demas, al servicio.
+	handle {
+		request_body {
+			max_size 10MB
+		}
+		reverse_proxy diagramservice:8080 {
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 130s
+			}
+		}
+	}
+}

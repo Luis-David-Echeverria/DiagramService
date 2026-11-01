@@ -1,0 +1,89 @@
+# DiagramService detras de Caddy (TLS en 443, HTTP-01 en 80). Ver docs/DEPLOY-HETZNER.md.
+# Escrito el 1-nov-2026 SIN EJECUTAR: probar en Hetzner.
+#
+# Las variables salen de ./.env (junto a este fichero; plantilla: .env.example).
+# Compose las interpola; cada contenedor recibe SOLO las suyas. La clave la ven
+# los dos: Caddy la exige en el borde y el servicio la vuelve a comprobar.
+# Las dos variables de clave son obligatorias; fuera de una rotacion, iguales.
+name: diagramservice
+
+services:
+  diagramservice:
+    build:
+      context: .
+      target: runtime
+    image: diagramservice:${DIAGRAMSERVICE_TAG:?falta DIAGRAMSERVICE_TAG en .env}
+    restart: unless-stopped
+    environment:
+      # La misma pareja que exige Caddy (el servicio tolera la clave repetida).
+      DIAGRAMSERVICE_API_KEYS: "${DIAGRAMSERVICE_API_KEY:?falta DIAGRAMSERVICE_API_KEY en .env},${DIAGRAMSERVICE_API_KEY_PREVIOUS:?falta DIAGRAMSERVICE_API_KEY_PREVIOUS en .env}"
+      MAX_BODY_BYTES: ${MAX_BODY_BYTES:-}
+    # Puerto INTERNO 8080: solo en la red de compose, sin publicar en el host.
+    expose:
+      - "8080"
+    networks: [interna]
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    cpus: 1.5
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "node", "server/healthcheck.cjs"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  caddy:
+    # Fijar por digest al instalar (caddy:2.x@sha256:...).
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      diagramservice:
+        condition: service_healthy
+    environment:
+      DIAGRAMSERVICE_DOMAIN: ${DIAGRAMSERVICE_DOMAIN:?falta DIAGRAMSERVICE_DOMAIN en .env}
+      ACME_EMAIL: ${ACME_EMAIL:?falta ACME_EMAIL en .env}
+      DIAGRAMSERVICE_ALLOWED_IPS: ${DIAGRAMSERVICE_ALLOWED_IPS:?falta DIAGRAMSERVICE_ALLOWED_IPS en .env}
+      DIAGRAMSERVICE_API_KEY: ${DIAGRAMSERVICE_API_KEY:?falta DIAGRAMSERVICE_API_KEY en .env}
+      DIAGRAMSERVICE_API_KEY_PREVIOUS: ${DIAGRAMSERVICE_API_KEY_PREVIOUS:?falta DIAGRAMSERVICE_API_KEY_PREVIOUS en .env}
+    # 80: solo el reto HTTP-01 de Let's Encrypt (lo demas, 404); abierto a todos
+    # en el firewall. 443: el servicio; en el firewall, solo VMBimcon02.
+    # Solo TCP (HTTP/3 desactivado en el Caddyfile).
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [interna, salida]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  # Sin salida a internet: el servicio no necesita llamar a nadie.
+  interna:
+    internal: true
+  # Caddy necesita salida para Let's Encrypt.
+  salida: {}
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}

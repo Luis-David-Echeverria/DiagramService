@@ -1,3 +1,8 @@
 node_modules/
 dist/
 *.bpmn
+
+# Secretos del despliegue (deploy/hetzner): solo .env.example entra.
+.env
+.env.*
+!.env.example

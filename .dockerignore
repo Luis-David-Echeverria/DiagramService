@@ -1,0 +1,12 @@
+# Todo fuera salvo lo que copia el Dockerfile.
+*
+!package.json
+!package-lock.json
+!tsconfig.json
+!src
+!server
+!examples
+!tests
+# Nunca secretos en el contexto de build.
+**/.env
+**/.env.*
